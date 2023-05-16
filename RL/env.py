@@ -44,10 +44,10 @@ class MyNMF(gym.Env):
     
     def upside_down(self):
         """ Check if the robot is upside down."""
-        #print(f"fly orientation: {self.fly_ori}")
-        if self.fly_ori[1] > 0.5:
-            return True
-        elif self.fly_ori[2] > 0.5:
+        ori_ref=[-1.5, 0, 0.88]
+        margin= 0.3
+        if np.any(self.fly_ori-ori_ref < -margin) or np.any(self.fly_ori-ori_ref > margin):
+            print("flipped")
             return True
         else:
             return False
@@ -55,8 +55,10 @@ class MyNMF(gym.Env):
     def reward(self):
         """ Reward function aiming at maximizing forward velocity."""
         # reward for forward velocity
-        vel_tracking_reward = self.fly_vel[0]
-        
+        vel_tracking_reward = -self.fly_vel[0]
+        print(f"fly vel {self.fly_vel/1000}")
+        #standing stability
+        z_penalty = -0.5*(self.fly_vel[2]/1000)**2
         #print(reward)
         if self.upside_down():
             flipped_reward=-100
@@ -104,22 +106,32 @@ class MyNMF(gym.Env):
         # for tau,vel in zip(self._dt_motor_torques,self._dt_motor_velocities):
         # energy_reward += np.abs(np.dot(tau,vel)) * self._time_step
 
+        # def compute_mechanical_work(self, joint_velocities, joint_torques):
+        # """ Computes the mechanical work spent by the animal. """
+        # return np.abs(
+        #     joint_torques@joint_velocities.T
+        # ) * self.time_step / self.run_time
+
         reward = vel_tracking_reward \
                  + flipped_reward \
+                 +z_penalty
         #         + yaw_reward \
         #         + roll_reward\
         #         + drift_reward \
         #         + vel_body_z_penalty \
         #         - 0.01 * energy_reward \
         #         - 0.1 * np.linalg.norm(self.robot.GetBaseOrientation() - np.array([0,0,0,1]))
-        
+        print(reward)
         self.reward_terms=self.reward_terms={"rew_total": reward, "vel_rew": vel_tracking_reward, "flipped_reward": flipped_reward}
-        return max(reward,0) # keep rewards positive
+        return reward # keep rewards positive
         
     def step(self, action):
+        # Later adapt the action with MLP 
+
         raw_obs, info = self.nmf.step({'joints': action})
         obs = self._parse_obs(raw_obs)
         self.joint_pos = raw_obs['joints'][0, :]
+        #positive: behind right up
         self.fly_pos = raw_obs['fly'][0, :]
         self.fly_vel = raw_obs['fly'][1, :]
         self.fly_ori = raw_obs['fly'][2, :]

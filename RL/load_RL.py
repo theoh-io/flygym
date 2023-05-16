@@ -6,6 +6,7 @@ from stable_baselines3.ppo import MlpPolicy
 #using the config 3 Dofs per leg we just get the joint positions in observation
 # if we would like to use other info in observation need to change observation space
 import os
+import cv2
 print(f"working dir: {os.getcwd()}")
 # Get the absolute path of the parent directory of the cwd
 parent_dir = os.path.abspath(os.path.join(os.getcwd(), os.pardir))
@@ -22,16 +23,16 @@ run_time = 0.5
 
 parent_dir = os.path.abspath(os.path.join(os.getcwd(), os.pardir))
 interm_dir = "RL_logs/models/"
-exp_name = "PPO_2012_frontlidar_ring"
+exp_name = "PPO_1605_flipped_penalty"
 log_dir = interm_dir + exp_name
 log_dir = os.path.join(parent_dir, log_dir)
 #stats_path = os.path.join(log_dir, "vec_normalize.pkl")
 model_name = get_latest_model(log_dir)
 
 
-nmf_env_rendered = MyNMF(render_mode='saved',
+nmf_env_rendered = MyNMF(render_mode='viewer',
                          timestep=1e-4,
-                         init_pose='stretch',
+                         init_pose='default',
                          render_config={'playspeed': 0.1,
                                         'camera': 'Animat/camera_left_top'},
                          actuated_joints=leg_dofs_3_per_leg)
@@ -49,8 +50,11 @@ for i in range(int(run_time / nmf_env_rendered.nmf.timestep)):
     rew_list.append(reward)
     nmf_env_rendered.render()
 
+# closing all open windows
+cv2.destroyAllWindows()
+
 # path_vids="../RL_logs/vids"
-# path=os.path.join(path_vids,'COLAB_test.mp4')
+# path=os.path.join(path_vids,'1605_flipped_penalty.mp4')
 # nmf_env_rendered.nmf.save_video(path)
 # nmf_env_rendered.close()
 
