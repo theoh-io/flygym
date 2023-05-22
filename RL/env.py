@@ -10,17 +10,28 @@ from flygym.util.data import default_pose_path
 
 
 class MyNMF(gym.Env):
-    def __init__(self, reward="default", verbose=0,**kwargs):
+    def __init__(self, control_mode="RL", reward="default", verbose=0,**kwargs):
         self.nmf = NeuroMechFlyMuJoCo(**kwargs)
-        num_dofs = len(self.nmf.actuated_joints)
-        bound = 0.5
-        self.action_space = spaces.Box(low=-bound, high=bound,
-                                       shape=(num_dofs,))
+        self.num_dofs = len(self.nmf.actuated_joints)
+        self.bound = 0.5
+
+        self.control_mode=control_mode
+        if control_mode=="RL":
+            print("training a pure RL controller")
+        elif control_mode=="CPG":
+            print("training a CPG RL controller")
+        elif control_mode=="Decentralized":
+            print("training RL-Decentralized controller")
+        else:
+            print(f"!!! Control mode {control_mode} is not implemented")
+        
+        self.init_action_space()
+        
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf,
-                                            shape=(num_dofs,))
-        self.joint_pos= np.zeros(num_dofs)
-        self.joint_vel= np.zeros(num_dofs)
-        self.joint_torques= np.zeros(num_dofs)
+                                            shape=(self.num_dofs,))
+        self.joint_pos= np.zeros(self.num_dofs)
+        self.joint_vel= np.zeros(self.num_dofs)
+        self.joint_torques= np.zeros(self.num_dofs)
         self.fly_pos = np.zeros(3)
         self.fly_vel = np.zeros(3)
         self.fly_ori = np.zeros(3)
@@ -42,6 +53,18 @@ class MyNMF(gym.Env):
         self.coeff_yaw=-2
         self.coeff_roll=-2
         #self.coeff_drift=-0.01
+        
+    def init_action_space(self):
+        if self.control_mode=="RL":
+            self.action_space = spaces.Box(low=-self.bound, high=self.bound,
+                                       shape=(self.num_dofs,))
+        elif self.control_mode=="CPG":
+            print("training a CPG RL controller")
+        elif self.control_mode=="Decentralized":
+            print("training RL-Decentralized controller")
+        else:
+            print(f"!!! Control mode {self.control_mode} is not implemented")
+    
 
 
     
