@@ -6,9 +6,11 @@ from scipy.spatial import ConvexHull
 from shapely.geometry import Point
 from shapely.geometry.polygon import Polygon
 #from scipy.spatial import ConvexHull, Point
+from flygym.util.data import default_pose_path
+
 
 class MyNMF(gym.Env):
-    def __init__(self, reward="default",**kwargs):
+    def __init__(self, reward="default", verbose=0,**kwargs):
         self.nmf = NeuroMechFlyMuJoCo(**kwargs)
         num_dofs = len(self.nmf.actuated_joints)
         bound = 0.5
@@ -17,6 +19,8 @@ class MyNMF(gym.Env):
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf,
                                             shape=(num_dofs,))
         self.joint_pos= np.zeros(num_dofs)
+        self.joint_vel= np.zeros(num_dofs)
+        self.joint_torques= np.zeros(num_dofs)
         self.fly_pos = np.zeros(3)
         self.fly_vel = np.zeros(3)
         self.fly_ori = np.zeros(3)
@@ -26,6 +30,18 @@ class MyNMF(gym.Env):
         self.reward_function=reward
         self.reward_total={"rew": 0}
         self.reward_terms={"rew_vel": 0}
+        
+        self.verbose=verbose
+
+        self.ori_ref=[-1.5, 0, 0.88]
+
+        self.coeff_vel=1
+        self.coeff_flipped=100
+        self.coeff_z=-0.01
+        self.coeff_energy=-1e05
+        self.coeff_yaw=-2
+        self.coeff_roll=-2
+        #self.coeff_drift=-0.01
 
 
     
@@ -51,10 +67,11 @@ class MyNMF(gym.Env):
     
     def upside_down(self):
         """ Check if the robot is upside down."""
-        ori_ref=[-1.5, 0, 0.88]
+        
         margin= 0.3
-        if np.any(self.fly_ori-ori_ref < -margin) or np.any(self.fly_ori-ori_ref > margin):
-            #print("flipped")
+        if np.any(self.fly_ori-self.ori_ref < -margin) or np.any(self.fly_ori-self.ori_ref > margin):
+            if self.verbose:
+                print("flipped")
             return True
         else:
             return False
@@ -62,22 +79,19 @@ class MyNMF(gym.Env):
     def reward_energy(self):
         """ Reward function aiming at maximizing forward velocity."""
         # reward for forward velocity
-        coeff_vel=1
-        coeff_flipped=100
-        coeff_z=-0.01
-        coeff_energy=-0.01
 
         vel_reward = -self.fly_vel[0]/1000
         z_penalty = (self.fly_vel[2]/1000)**2
         if self.upside_down():
-            flipped_reward=-100
+            flipped_reward=-1
         else:
             flipped_reward=0    
         
         # minimize energy 
         energy_reward = 0 
-        for tau,vel in zip(self._dt_motor_torques,self._dt_motor_velocities):
-            energy_reward += np.abs(np.dot(tau,vel)) * self._time_step
+        
+        for tau,vel in zip(self.joint_torques,self.joint_vel):
+             energy_reward += np.abs(np.dot(tau,vel)) * self.nmf.timestep
 
         # def compute_mechanical_work(self, joint_velocities, joint_torques):
         # """ Computes the mechanical work spent by the animal. """
@@ -85,58 +99,67 @@ class MyNMF(gym.Env):
         #     joint_torques@joint_velocities.T
         # ) * self.time_step / self.run_time
 
-        reward = coeff_vel*vel_reward \
-                 + coeff_flipped*flipped_reward \
-                 + coeff_z* z_penalty \
-                 + coeff_energy * energy_reward
+        reward = self.coeff_vel*vel_reward \
+                 + self.coeff_flipped*flipped_reward \
+                 + self.coeff_z* z_penalty \
+                 + self.coeff_energy * energy_reward
         
         self.reward_total={"rew": reward}
-        self.reward_terms={ "vel_rew": coeff_vel*vel_reward, \
-                            "z_penalty": coeff_z*z_penalty, \
-                            "energy": coeff_energy*energy_reward}
+        self.reward_terms={ "vel_rew": self.coeff_vel*vel_reward, \
+                            "z_penalty": self.coeff_z*z_penalty, \
+                            "energy": self.coeff_energy*energy_reward}
+        
+        if self.verbose:
+            print(f"joint vel: {self.joint_vel}")
+            print(f"torques: {self.joint_torques}")
+            print(f"reward_ tot: {reward}")
+            print(f"vel:{self.coeff_vel*vel_reward}, z:{self.coeff_z*z_penalty}, energy: {self.coeff_energy*energy_reward}")
+        
+
         return reward # keep rewards positive
         
     
     def reward_straight(self):
         """ Reward function aiming at maximizing forward velocity while penalizing lateral drift."""
-        coeff_vel=1
-        coeff_flipped=100
-        coeff_z=-0.01
-        coeff_yaw=-0.3
-        coeff_roll=-0.3
-        coeff_drift=-0.01
+        
 
         vel_reward = -self.fly_vel[0]/1000
         z_penalty = (self.fly_vel[2]/1000)**2
         
         if self.upside_down():
-            flipped_reward=-100
+            flipped_reward=-1
         else:
             flipped_reward=0    
         
-        # minimize yaw (go straight) 
-        yaw_reward = np.abs(self.robot.GetBaseOrientationRollPitchYaw()[2]) 
-
         #minmize roll (not fall on the side)
-        roll_reward = np.abs(self.robot.GetBaseOrientationRollPitchYaw()[0]) 
+        roll_reward = np.abs(self.fly_ori[0]-self.ori_ref[0])
 
+        # minimize yaw (go straight) 
+        yaw_reward = np.abs(self.fly_ori[2]-self.ori_ref[2])
+
+         
+        
         # penalty body y - don't drift laterally
-        drift_reward = abs(self.robot.GetBasePosition()[1]) #0.01
+        #drift_reward = abs(self.robot.GetBasePosition()[1]) #0.01
 
 
-        reward = coeff_vel*vel_reward \
-                 + coeff_flipped*flipped_reward \
-                 + coeff_z*z_penalty \
-                 + coeff_yaw * yaw_reward \
-                 + coeff_roll * roll_reward\
-                 + coeff_drift * drift_reward \
+        reward = self.coeff_vel*vel_reward \
+                 + self.coeff_flipped*flipped_reward \
+                 + self.coeff_z*z_penalty \
+                 + self.coeff_yaw * yaw_reward \
+                 + self.coeff_roll * roll_reward\
+                 #+ self.coeff_drift * drift_reward \
+
+        if self.verbose:
+            print(f"total rew {reward}")
+            print(f"orientation {yaw_reward}, {roll_reward}")
        
         self.reward_total={"rew": reward}
-        self.reward_terms={ "vel_rew": coeff_vel*vel_reward, \
-                            "z_penalty": coeff_z*z_penalty, \
-                            "yaw": coeff_yaw * yaw_reward, \
-                            "roll": coeff_roll * roll_reward, \
-                            "drift": coeff_drift * drift_reward}
+        self.reward_terms={ "vel_rew": self.coeff_vel*vel_reward, \
+                            "z_penalty": self.coeff_z*z_penalty, \
+                            "yaw": self.coeff_yaw * yaw_reward, \
+                            "roll": self.coeff_roll * roll_reward}#, \
+                            #"drift": self.coeff_drift * drift_reward}
         return reward # keep rewards positive
     
     def support_polygon(self, contact_points):
@@ -159,24 +182,26 @@ class MyNMF(gym.Env):
 
     def reward_COP(self):
         """ Reward function aiming at penalizing CoP outside of support polygon."""
-        coeff_vel=1
-        coeff_flipped=100
-        coeff_z=-0.01
-        coeff_CoP=1
+        
 
         vel_reward = -self.fly_vel[0]/1000
         z_penalty = (self.fly_vel[2]/1000)**2
         
         if self.upside_down():
-            flipped_reward=-100
+            flipped_reward=-1
         else:
             flipped_reward=0    
         
-        print(f"contact_forces {self.contact_forces}")
-        print(f"end eff pos {self.end_effectors}")
+        
         # Compute the center of pressure
         total_force = np.sum(self.contact_forces, axis=0)
-        print(f"total force {np.linalg.norm(total_force)}")
+        if self.verbose:
+            print(f"contact_forces {self.contact_forces.shape}")
+            print(f"end eff pos {self.end_effectors.shape}")
+            print(f"sum {np.sum(self.contact_forces*self.end_effectors, axis=0).shape}")
+            print(f"total force {np.linalg.norm(total_force).shape}")
+            
+
         if np.linalg.norm(total_force) > 0:
             cop = np.sum(self.contact_forces*self.end_effectors, axis=0) / np.linalg.norm(total_force)
         else:
@@ -202,13 +227,20 @@ class MyNMF(gym.Env):
         #     penalty = -0.1
         #     reward += penalty
 
-        reward = coeff_vel*vel_reward \
-                 + coeff_flipped*flipped_reward \
-                 +coeff_z*z_penalty \
-                 +coeff_CoP*cop_reward
+        reward = self.coeff_vel*vel_reward \
+                 + self.coeff_flipped*flipped_reward \
+                 +self.coeff_z*z_penalty \
+                 +self.coeff_CoP*cop_reward
+        
+        if self.verbose:
+            print(f"contact_forces {self.contact_forces}")
+            print(f"end eff pos {self.end_effectors}")
+            print(f"total force {np.linalg.norm(total_force)}")
+            print(f"CoP {cop}")
+            print(f"CoP inside: {CoP_inside}")
         
         self.reward_total={"rew": reward}
-        self.reward_terms={"vel_rew": coeff_vel*vel_reward, "z_penalty": coeff_z*z_penalty, "CoP": coeff_CoP*cop_reward}
+        self.reward_terms={"vel_rew": self.coeff_vel*vel_reward, "z_penalty": self.coeff_z*z_penalty, "CoP": self.coeff_CoP*cop_reward}
         return reward # keep rewards positive
     
     def reward_full(self):
@@ -217,28 +249,41 @@ class MyNMF(gym.Env):
     def reward(self):
         """ Reward function aiming at maximizing forward velocity."""
         # reward for forward velocity
-        vel_tracking_reward = -self.fly_vel[0]/1000
-        z_penalty = -0.5*(self.fly_vel[2]/1000)**2
+        vel_reward = -self.fly_vel[0]/1000
+        z_penalty = (self.fly_vel[2]/1000)**2
 
         if self.upside_down():
-            flipped_reward=-100
+            flipped_reward=-1
         else:
             flipped_reward=0    
 
-        reward = vel_tracking_reward \
-                 + flipped_reward \
-                 +z_penalty
+        reward = self.coeff_vel*vel_reward \
+                 + self.coeff_flipped*flipped_reward \
+                 +self.coeff_z*z_penalty
 
         self.reward_total={"rew": reward}
-        self.reward_terms={"vel_rew": vel_tracking_reward, "z_penalty": z_penalty}
+        self.reward_terms={"vel_rew": self.coeff_vel*vel_reward, "z_penalty": self.coeff_z*z_penalty}
+        if self.verbose:
+            print(f"reward_ tot: {reward}")
+            print(f"vel:{self.coeff_vel*vel_reward}, z:{self.coeff_z*z_penalty}")
         return reward # keep rewards positive
         
+
+    def act_angle_diff(self, raw_action):
+        init_pose=list(self.nmf.init_pose.values())
+        #print(init_pose)
+        action=raw_action+init_pose
+        return action
+    
+
     def step(self, action):
         # Later adapt the action with MLP 
-
+        action=self.act_angle_diff(action)
         raw_obs, info = self.nmf.step({'joints': action})
         obs = self._parse_obs(raw_obs)
         self.joint_pos = raw_obs['joints'][0, :]
+        self.joint_vel = raw_obs['joints'][1, :]
+        self.joint_torques = raw_obs['joints'][2, :]
         #positive: behind right up
         self.fly_pos = raw_obs['fly'][0, :]
         self.fly_vel = raw_obs['fly'][1, :]
@@ -250,7 +295,7 @@ class MyNMF(gym.Env):
         elif self.reward_function=="energy":
             reward=self.reward_energy()
         elif self.reward_function=="straight":
-            reward=self.reward_energy()
+            reward=self.reward_straight()
         elif self.reward_function=="COP":
             reward=self.reward_COP()
         elif self.reward_function=="full":

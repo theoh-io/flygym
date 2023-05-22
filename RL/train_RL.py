@@ -13,7 +13,7 @@ print(f"working dir: {os.getcwd()}")
 # Get the absolute path of the parent directory of the cwd
 parent_dir = os.path.abspath(os.path.join(os.getcwd(), os.pardir))
 # Construct the path to the TL_logs directory
-SAVE_NAME="1605_z_penalty"
+SAVE_NAME="2205_angdiff_default"
 SAVE_PATH = 'RL_logs/models/'+f"PPO_{SAVE_NAME}/" #datetime.now().strftime("%m%d%y%H%M%S") + '/'
 if COLAB:
     SAVE_PATH=os.path.join(os.getcwd(),SAVE_PATH)
@@ -38,7 +38,7 @@ checkpoint_callback = CheckpointCallback(save_freq=10000, save_path=SAVE_PATH,na
 
 
 nmf_model = PPO(MlpPolicy, nmf_env_headless,verbose=1, tensorboard_log=TB_LOG)
-nmf_model.learn(total_timesteps=60_000, log_interval=1,callback=checkpoint_callback, tb_log_name=SAVE_NAME)
+nmf_model.learn(total_timesteps=100_000, log_interval=1,callback=checkpoint_callback, tb_log_name=SAVE_NAME)
 
 env=nmf_model.get_env()
 env.close()

@@ -26,6 +26,8 @@ terrain_config = {'fly_pos': (0, 0, 300),
                   'friction': (friction, 0.005, 0.0001)}
 
 nmf_env = MyNMF(render_mode='viewer',
+                        verbose=0,
+                        reward="default",
                          timestep=1e-4,
                          render_config={'playspeed': 0.1, 'camera': 'Animat/camera_left_top'},
                          init_pose='default',
@@ -222,7 +224,9 @@ for i in range(num_steps):
 
     joint_angles[i, :] = action['joints']
     
-    obs, info = nmf_env.nmf.step(action)
+    #print(action['joints'])
+    obs, reward, terminated, truncated, info = nmf_env.step(action['joints'])
+    #obs, info = nmf_env.nmf.step(action)
     obs_list_tripod.append(obs)
 
     raw_obs = nmf_env.nmf._get_observation()
@@ -230,7 +234,17 @@ for i in range(num_steps):
     fly_pos = raw_obs['fly'][0, :]
     fly_vel = raw_obs['fly'][1, :]
     fly_ori = raw_obs['fly'][2, :]
-    print(f"position: {fly_pos/1000}")
-    print(f"orientation: {fly_vel/1000}")
+    #print(f"position: {fly_pos/1000}")
+    #print(f"orientation: {fly_vel/1000}")
     nmf_env.render()
+
+# obs, _ = nmf_env_rendered.reset()
+# obs_list = []
+# rew_list = []
+# for i in range(int(run_time / nmf_env_rendered.nmf.timestep)):
+#     action, _ = nmf_model.predict(obs)
+#     obs, reward, terminated, truncated, info = nmf_env_rendered.step(action)
+#     obs_list.append(obs)
+#     rew_list.append(reward)
+#     nmf_env_rendered.render()
 
