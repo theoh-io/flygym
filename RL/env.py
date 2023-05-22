@@ -162,7 +162,7 @@ class MyNMF(gym.Env):
         coeff_vel=1
         coeff_flipped=100
         coeff_z=-0.01
-        coeff_CoP=
+        coeff_CoP=1
 
         vel_reward = -self.fly_vel[0]/1000
         z_penalty = (self.fly_vel[2]/1000)**2
