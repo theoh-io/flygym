@@ -7,13 +7,7 @@ from stable_baselines3.ppo import MlpPolicy
 # if we would like to use other info in observation need to change observation space
 import os
 import cv2
-print(f"working dir: {os.getcwd()}")
-# Get the absolute path of the parent directory of the cwd
-parent_dir = os.path.abspath(os.path.join(os.getcwd(), os.pardir))
-# Construct the path to the TL_logs directory
-SAVE_PATH = os.path.join(parent_dir, "RL_logs")
-print(SAVE_PATH)
-SAVE_NAME="1605_flipped_penalty"
+
 
 from utils_RL import CheckpointCallback
 from utils_RL import get_latest_model
@@ -23,7 +17,7 @@ run_time = 0.5
 
 parent_dir = os.path.abspath(os.path.join(os.getcwd(), os.pardir))
 interm_dir = "RL_logs/models/"
-exp_name = "PPO_1605_flipped_penalty"
+exp_name = "PPO_1605_z_penalty"
 log_dir = interm_dir + exp_name
 log_dir = os.path.join(parent_dir, log_dir)
 #stats_path = os.path.join(log_dir, "vec_normalize.pkl")
