@@ -7,12 +7,14 @@ from stable_baselines3.ppo import MlpPolicy
 # if we would like to use other info in observation need to change observation space
 import os
 import argparse
+import datetime
 
 parser = argparse.ArgumentParser(
                     prog='RL Training',
                     description='RL training on mujoco',
                     epilog='use -r to choose the reward function')
 
+parser.add_argument('-n', '--name', default="0")
 parser.add_argument('-r', '--reward', default="default")      # option that takes a value
 args = parser.parse_args()
 
@@ -22,7 +24,11 @@ print(f"working dir: {os.getcwd()}")
 # Get the absolute path of the parent directory of the cwd
 parent_dir = os.path.abspath(os.path.join(os.getcwd(), os.pardir))
 # Construct the path to the TL_logs directory
-SAVE_NAME="2205_angdiff_default"
+date=datetime.datetime.now()
+day=date.strftime("%d")
+month=date.strftime("%m")
+SAVE_NAME=f"{day}{month}_{args.name}_{args.reward}"
+print(SAVE_NAME)
 SAVE_PATH = 'RL_logs/models/'+f"PPO_{SAVE_NAME}/" #datetime.now().strftime("%m%d%y%H%M%S") + '/'
 if COLAB:
     SAVE_PATH=os.path.join(os.getcwd(),SAVE_PATH)
