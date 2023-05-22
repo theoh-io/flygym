@@ -10,6 +10,7 @@ from scipy.spatial.transform import Rotation as R
 import gymnasium as gym
 from gymnasium import spaces
 from gymnasium.core import ObsType
+import cv2
 
 try:
     import mujoco
@@ -48,7 +49,7 @@ _default_terrain_config = {
         'size': (50_000, 50_000),
         'friction': (1, 0.005, 0.0001),
         'fly_pos': (0, 0, 300),
-        'fly_orient': (0, 1, 0, 0.1)
+        'fly_orient': (0, 1, 1, 0.1)
     },
     'gapped': {
         'x_range': (-10_000, 10_000),
@@ -84,6 +85,8 @@ _default_physics_config = {
 _default_render_config = {
     'saved': {'window_size': (640, 480), 'playspeed': 1.0, 'fps': 60,
               'camera': 1},
+    'viewer': {'window_size': (640, 480), 'playspeed': 1.0, 'fps': 60,
+                'camera': 1, 'fps':50},
     'headless': {}
 }
 
@@ -220,6 +223,7 @@ class NeuroMechFlyMuJoCo(gym.Env):
             'all', 'legs', 'legs-no-coxa', 'tarsi', or 'none'.
         """
         self.render_mode = render_mode
+        self.frame_count = -1 # used to avoid showing all frames in viewer mode
         self.render_config = copy.deepcopy(_default_render_config[render_mode])
         self.render_config.update(render_config)
         self.actuated_joints = actuated_joints
@@ -567,6 +571,22 @@ class NeuroMechFlyMuJoCo(gym.Env):
         """Call the ``render`` method to update the renderer. It should
         be called every iteration; the method will decide by itself
         whether action is required."""
+        if self.render_mode == 'viewer':
+            self.frame_count+=1
+            width, height = self.render_config['window_size']
+            camera = self.render_config['camera']
+            vis_fps = self.render_config['fps']
+            img = self.physics.render(width=width, height=height,
+                                      camera_id=camera)
+            
+            self._frames.append(img.copy())
+            self._last_render_time = self.curr_time
+            if self.frame_count%vis_fps == 0:
+                cv2.imshow("RL", img)
+                cv2.waitKey(1)
+                self.frame_count=0
+            
+
         if self.render_mode == 'headless':
             return
         if self.curr_time < self._last_render_time + self._eff_render_interval:
@@ -576,6 +596,7 @@ class NeuroMechFlyMuJoCo(gym.Env):
             camera = self.render_config['camera']
             img = self.physics.render(width=width, height=height,
                                       camera_id=camera)
+            
             self._frames.append(img.copy())
             self._last_render_time = self.curr_time
         else:
