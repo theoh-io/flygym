@@ -6,6 +6,15 @@ from stable_baselines3.ppo import MlpPolicy
 #using the config 3 Dofs per leg we just get the joint positions in observation
 # if we would like to use other info in observation need to change observation space
 import os
+import argparse
+
+parser = argparse.ArgumentParser(
+                    prog='RL Training',
+                    description='RL training on mujoco',
+                    epilog='use -r to choose the reward function')
+
+parser.add_argument('-r', '--reward', default="default")      # option that takes a value
+args = parser.parse_args()
 
 
 COLAB=True
@@ -32,6 +41,7 @@ run_time = 0.5
 nmf_env_headless = MyNMF(render_mode='headless',
                          timestep=1e-4,
                          init_pose='default',
+                         reward=args.reward,
                          actuated_joints=leg_dofs_3_per_leg)  # which DoFs would you use?
 
 checkpoint_callback = CheckpointCallback(save_freq=10000, save_path=SAVE_PATH,name_prefix='rl_model', env=nmf_env_headless, rew_freq=1000, verbose=2)
