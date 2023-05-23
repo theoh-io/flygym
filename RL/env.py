@@ -10,10 +10,16 @@ from flygym.util.data import default_pose_path
 
 
 class MyNMF(gym.Env):
-    def __init__(self, control_mode="RL", reward="default", verbose=0,**kwargs):
+    def __init__(self, obs_mode="default", control_mode="RL", reward="default", verbose=0,**kwargs):
         self.nmf = NeuroMechFlyMuJoCo(**kwargs)
         self.num_dofs = len(self.nmf.actuated_joints)
         self.bound = 0.5
+
+        self.num_steps=15000
+        self.stab_steps=1000
+        self.counter=0
+        self.timestep=self.nmf.timestep
+        self.max_sim=self.num_steps*self.timestep
 
         self.control_mode=control_mode
         if control_mode=="RL":
@@ -26,9 +32,9 @@ class MyNMF(gym.Env):
             print(f"!!! Control mode {control_mode} is not implemented")
         
         self.init_action_space()
-        
-        self.observation_space = spaces.Box(low=-np.inf, high=np.inf,
-                                            shape=(self.num_dofs,))
+        self.obs_mode=obs_mode
+        self.init_obs_space()
+        #self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(self.num_dofs,))
         self.joint_pos= np.zeros(self.num_dofs)
         self.joint_vel= np.zeros(self.num_dofs)
         self.joint_torques= np.zeros(self.num_dofs)
@@ -37,7 +43,7 @@ class MyNMF(gym.Env):
         self.fly_ori = np.zeros(3)
         self.contact_forces=np.zeros(6*3)
         self.end_effectors=np.zeros(6*3)
-
+        self.metrics={"pos_x": self.fly_pos[0], "pos_y": self.fly_pos[1], "pos_z": self.fly_pos[2]}
         self.reward_function=reward
         self.reward_total={"rew": 0}
         self.reward_terms={"rew_vel": 0}
@@ -45,10 +51,12 @@ class MyNMF(gym.Env):
         self.verbose=verbose
 
         self.ori_ref=[-1.5, 0, 0.88]
+        self.flipped_margin=1.5
 
-        self.coeff_vel=1
-        self.coeff_flipped=100
-        self.coeff_z=-0.01
+        self.coeff_vel=2
+        self.coeff_flipped=50
+        self.coeff_vel_z=-0.005
+        self.coeff_pos_z=-0.005
         self.coeff_energy=-1e05
         self.coeff_yaw=-2
         self.coeff_roll=-2
@@ -56,6 +64,7 @@ class MyNMF(gym.Env):
         
     def init_action_space(self):
         if self.control_mode=="RL":
+            print("using joint angle diff as actions")
             self.action_space = spaces.Box(low=-self.bound, high=self.bound,
                                        shape=(self.num_dofs,))
         elif self.control_mode=="CPG":
@@ -65,33 +74,63 @@ class MyNMF(gym.Env):
         else:
             print(f"!!! Control mode {self.control_mode} is not implemented")
     
-
-
+    def init_obs_space(self):
+        num_joints=18
+        if self.obs_mode=="default":
+            print("using default observation space")
+            self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(self.num_dofs,))
+        elif self.obs_mode=="standard":
+            dim=num_joints*3
+            self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(dim,))
+        elif self.obs_mode=="augmented":
+            dim=self.num_dofs*3+3*4+3*4+6*3+6*3
+            #print(f"dim {dim}")
+            self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(dim,))
+        
     
     def _parse_obs(self, raw_obs):
-        features = [
+        if self.obs_mode=="default":
+            features = [raw_obs['joints'][0, :].flatten()]
+        elif self.obs_mode=="standard":
+            features = [
             #joint angle
             raw_obs['joints'][0, :].flatten(),
             #joint velocity
-            #raw_obs['joints'][1, :].flatten(),
+            raw_obs['joints'][1, :].flatten(),
             #joint torque
+            raw_obs['joints'][2, :].flatten()
             #raw_obs['joints'][1, :].flatten(),
             # raw_obs['fly'].flatten(),
             # what else would you like to include?
-        ]
-        #print(raw_obs['joints'].shape)
+            ]
+            #print(raw_obs['joints'].shape)
+            #print(np.array(features).shape)
+        elif self.obs_mode=="augmented":
+            features = [
+                raw_obs['joints'][0, :].flatten(),
+                raw_obs['joints'][1, :].flatten(),
+                raw_obs['joints'][2, :].flatten(),
+                raw_obs['fly'][0, :].flatten(),
+                raw_obs['fly'][1, :].flatten(),
+                raw_obs['fly'][2, :].flatten(),
+                raw_obs['fly'][2, :].flatten(),
+                raw_obs['contact_forces'].flatten(),
+                raw_obs['end_effectors'].flatten()]
         #print(np.array(features).shape)
         return np.concatenate(features, dtype=np.float32)
     
     def reset(self):
         #self.reward_terms={"rew_total": 0}
+        self.counter=0
+        if self.verbose:
+            print("resetting the environment")
         raw_obs, info = self.nmf.reset()
         return self._parse_obs(raw_obs), info
     
     def upside_down(self):
         """ Check if the robot is upside down."""
         
-        margin= 0.3
+        margin= self.flipped_margin
         if np.any(self.fly_ori-self.ori_ref < -margin) or np.any(self.fly_ori-self.ori_ref > margin):
             if self.verbose:
                 print("flipped")
@@ -146,13 +185,14 @@ class MyNMF(gym.Env):
         """ Reward function aiming at maximizing forward velocity while penalizing lateral drift."""
         
 
-        vel_reward = -self.fly_vel[0]/1000
+        vel_reward = self.fly_vel[0]/1000
         z_penalty = (self.fly_vel[2]/1000)**2
         
         if self.upside_down():
             flipped_reward=-1
         else:
             flipped_reward=0    
+        
         
         #minmize roll (not fall on the side)
         roll_reward = np.abs(self.fly_ori[0]-self.ori_ref[0])
@@ -272,8 +312,12 @@ class MyNMF(gym.Env):
     def reward(self):
         """ Reward function aiming at maximizing forward velocity."""
         # reward for forward velocity
-        vel_reward = -self.fly_vel[0]/1000
-        z_penalty = (self.fly_vel[2]/1000)**2
+        vel_reward = self.fly_vel[0]/1000
+        #vel_reward = self.fly_vel[0]/1000
+        z_vel_penalty = (self.fly_vel[2]/1000)**2
+
+        init_pose=list(self.nmf.init_pose.values())
+        z_pos_penalty = ((self.fly_pos[2]-init_pose[2])/1000)**2
 
         if self.upside_down():
             flipped_reward=-1
@@ -282,13 +326,14 @@ class MyNMF(gym.Env):
 
         reward = self.coeff_vel*vel_reward \
                  + self.coeff_flipped*flipped_reward \
-                 +self.coeff_z*z_penalty
+                 +self.coeff_vel_z*z_vel_penalty \
+                 +self.coeff_pos_z*z_pos_penalty
 
         self.reward_total={"rew": reward}
-        self.reward_terms={"vel_rew": self.coeff_vel*vel_reward, "z_penalty": self.coeff_z*z_penalty}
+        self.reward_terms={"vel_rew": self.coeff_vel*vel_reward, "z_vel_penalty": self.coeff_vel_z*z_vel_penalty, "z_pos_penalty": self.coeff_pos_z*z_pos_penalty}
         if self.verbose:
             print(f"reward_ tot: {reward}")
-            print(f"vel:{self.coeff_vel*vel_reward}, z:{self.coeff_z*z_penalty}")
+            print(f"vel:{self.coeff_vel*vel_reward}, z_vel:{self.coeff_vel_z*z_vel_penalty}, z_pos:{self.coeff_pos_z*z_pos_penalty}, flipped:{self.coeff_flipped*flipped_reward}")
         return reward # keep rewards positive
         
 
@@ -297,11 +342,26 @@ class MyNMF(gym.Env):
         #print(init_pose)
         action=raw_action+init_pose
         return action
-    
+
+    def act_prev_angle(self, raw_action):
+        prev_angles=self.nmf._get_observation()["joints"][0,:]
+        #print(init_pose)
+        action=raw_action+prev_angles
+        return action
 
     def step(self, action):
         # Later adapt the action with MLP 
-        action=self.act_angle_diff(action)
+        self.counter+=1
+        if self.verbose: print(f"counter: {self.counter}")
+
+        if self.control_mode=="RL":
+            action=self.act_angle_diff(action)
+            #action=self.act_prev_angle(action)  
+        if self.counter<self.stab_steps:     
+            #to stabilize the fly at the beginning of the simulation    
+            init_pose=list(self.nmf.init_pose.values())
+            action=init_pose     
+            
         raw_obs, info = self.nmf.step({'joints': action})
         obs = self._parse_obs(raw_obs)
         self.joint_pos = raw_obs['joints'][0, :]
@@ -311,8 +371,12 @@ class MyNMF(gym.Env):
         self.fly_pos = raw_obs['fly'][0, :]
         self.fly_vel = raw_obs['fly'][1, :]
         self.fly_ori = raw_obs['fly'][2, :]
+        self.metrics={"pos_x": self.fly_pos[0], "pos_y": self.fly_pos[1], "pos_z": self.fly_pos[2]}
         self.contact_forces=raw_obs['contact_forces']
         self.end_effectors=raw_obs['end_effectors']
+        if self.verbose:
+            print(f"fly pos: {self.fly_pos}")
+            print(f"fly vel: {self.fly_vel}")
         if self.reward_function=="default":
             reward = self.reward()  # what is your reward function?
         elif self.reward_function=="energy":
@@ -323,7 +387,7 @@ class MyNMF(gym.Env):
             reward=self.reward_COP()
         elif self.reward_function=="full":
             reward=self.reward_full()
-        if self.upside_down():
+        if self.upside_down() or self.counter>self.num_steps :
             terminated = True
             self.reset()
         else:

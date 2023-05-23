@@ -13,6 +13,13 @@ leg_dofs_3_per_leg = [
     for dof in ['Coxa' if pos == 'F' else 'Coxa_roll', 'Femur', 'Tibia']
 ]
 
+leg_dofs_2_per_leg = [
+    f'joint_{side}{pos}{dof}'
+    for side in 'LR'
+    for pos in 'FMH'
+    for dof in ['Coxa' if pos == 'F' else 'Coxa_roll', 'Femur']
+]
+
 ###### Geometries ######
 all_tarsi_collisions_geoms = [
     f'{side}{pos}{dof}_collision'

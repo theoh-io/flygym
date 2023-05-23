@@ -65,7 +65,7 @@ class CheckpointCallback(BaseCallback):
             #print(self.env.envs[0].env)
             self.tb_formatter.writer.add_scalars("reward/", self.env.reward_total, self.num_timesteps)
             self.tb_formatter.writer.add_scalars("reward_terms/", self.env.reward_terms, self.num_timesteps)
-            #self.tb_formatter.writer.add_scalars("metrics/", self.env.envs[0].env.metrics, self.num_timesteps)
+            self.tb_formatter.writer.add_scalars("metrics/", self.env.metrics, self.num_timesteps)
             self.tb_formatter.writer.flush()
 
         return True

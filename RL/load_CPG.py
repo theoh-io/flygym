@@ -26,6 +26,7 @@ terrain_config = {'fly_pos': (0, 0, 300),
                   'friction': (friction, 0.005, 0.0001)}
 
 nmf_env = MyNMF(render_mode='viewer',
+                        control_mode="CPG",
                         verbose=0,
                         reward="default",
                          timestep=1e-4,
@@ -140,7 +141,7 @@ phase_biases_wave = np.array([[0, 0.175, 0.325, 0.5, 0, 0],
                             [0, 0.5, 0, 0.175, 0, 0.175],
                             [0, 0, 0.5, 0.325, 0.175, 0]]) 
 
-phase_biases = phase_biases_measured * 2 * np.pi
+phase_biases = phase_biases_l_tetra * 2 * np.pi
 
 coupling_weights = (np.abs(phase_biases) > 0).astype(float) * 10.0 #* 10.0
 
@@ -234,8 +235,8 @@ for i in range(num_steps):
     fly_pos = raw_obs['fly'][0, :]
     fly_vel = raw_obs['fly'][1, :]
     fly_ori = raw_obs['fly'][2, :]
-    #print(f"position: {fly_pos/1000}")
-    #print(f"orientation: {fly_vel/1000}")
+    print(f"position: {fly_pos/1000}")
+    print(f"orientation: {fly_vel/1000}")
     nmf_env.render()
 
 # obs, _ = nmf_env_rendered.reset()

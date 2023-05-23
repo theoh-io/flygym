@@ -1,5 +1,5 @@
 from flygym.util.config import all_leg_dofs
-from flygym.util.config import leg_dofs_3_per_leg
+from flygym.util.config import leg_dofs_3_per_leg, leg_dofs_2_per_leg
 
 from stable_baselines3 import PPO
 from stable_baselines3.ppo import MlpPolicy
@@ -19,7 +19,7 @@ parser.add_argument('-r', '--reward', default="default")      # option that take
 args = parser.parse_args()
 
 
-COLAB=True
+COLAB=False
 print(f"working dir: {os.getcwd()}")
 # Get the absolute path of the parent directory of the cwd
 parent_dir = os.path.abspath(os.path.join(os.getcwd(), os.pardir))
@@ -28,6 +28,9 @@ date=datetime.datetime.now()
 day=date.strftime("%d")
 month=date.strftime("%m")
 SAVE_NAME=f"{day}{month}_{args.name}_{args.reward}"
+#SAVE_NAME="trash_test"
+
+
 print(SAVE_NAME)
 SAVE_PATH = 'RL_logs/models/'+f"PPO_{SAVE_NAME}/" #datetime.now().strftime("%m%d%y%H%M%S") + '/'
 if COLAB:
@@ -43,18 +46,21 @@ print(SAVE_PATH)
 from utils_RL import CheckpointCallback
 from env import MyNMF
 
-run_time = 0.5
-nmf_env_headless = MyNMF(render_mode='headless',
+
+nmf_env_headless = MyNMF(reward=args.reward,
+                        verbose=0,
+                         obs_mode='augmented',
+                         control_mode="RL",
+                        render_mode='headless',
                          timestep=1e-4,
                          init_pose='default',
-                         reward=args.reward,
-                         actuated_joints=leg_dofs_3_per_leg)  # which DoFs would you use?
+                         actuated_joints=leg_dofs_2_per_leg)  # which DoFs would you use?
 
 checkpoint_callback = CheckpointCallback(save_freq=10000, save_path=SAVE_PATH,name_prefix='rl_model', env=nmf_env_headless, rew_freq=1000, verbose=2)
 
 
-nmf_model = PPO(MlpPolicy, nmf_env_headless,verbose=1, tensorboard_log=TB_LOG)
-nmf_model.learn(total_timesteps=100_000, log_interval=1,callback=checkpoint_callback, tb_log_name=SAVE_NAME)
+nmf_model = PPO(MlpPolicy, nmf_env_headless, verbose=1, tensorboard_log=TB_LOG)
+nmf_model.learn(total_timesteps=200_000, log_interval=1,callback=checkpoint_callback, tb_log_name=SAVE_NAME)
 
 env=nmf_model.get_env()
 env.close()

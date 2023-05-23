@@ -1,5 +1,5 @@
 from flygym.util.config import all_leg_dofs
-from flygym.util.config import leg_dofs_3_per_leg
+from flygym.util.config import leg_dofs_3_per_leg, leg_dofs_2_per_leg
 
 from stable_baselines3 import PPO
 from stable_baselines3.ppo import MlpPolicy
@@ -13,11 +13,11 @@ from utils_RL import CheckpointCallback
 from utils_RL import get_latest_model
 from env import MyNMF
 
-run_time = 0.5
+run_time = 10
 
 parent_dir = os.path.abspath(os.path.join(os.getcwd(), os.pardir))
 interm_dir = "RL_logs/models/"
-exp_name = "PPO_1605_z_penalty"
+exp_name = "PPO_2305_2dof_posi_rew_default"
 log_dir = interm_dir + exp_name
 log_dir = os.path.join(parent_dir, log_dir)
 #stats_path = os.path.join(log_dir, "vec_normalize.pkl")
@@ -26,10 +26,14 @@ model_name = get_latest_model(log_dir)
 
 nmf_env_rendered = MyNMF(render_mode='viewer',
                          timestep=1e-4,
+                         obs_mode='augmented',
+                         control_mode="RL",
+                         verbose=1,
+                         #terrain='blocks',
                          init_pose='default',
                          render_config={'playspeed': 0.1,
                                         'camera': 'Animat/camera_left_top'},
-                         actuated_joints=leg_dofs_3_per_leg)
+                         actuated_joints=leg_dofs_2_per_leg)
 
 nmf_model = PPO.load(model_name, env=nmf_env_rendered)
 
