@@ -7,6 +7,7 @@ from shapely.geometry import Point
 from shapely.geometry.polygon import Polygon
 #from scipy.spatial import ConvexHull, Point
 from flygym.util.data import default_pose_path
+from decentralized import Decentralized_Controller
 
 
 class MyNMF(gym.Env):
@@ -15,11 +16,10 @@ class MyNMF(gym.Env):
         self.num_dofs = len(self.nmf.actuated_joints)
         self.bound = 0.5
 
-        self.num_steps=15000
-        self.stab_steps=1000
+        self.num_steps=10_000
+        self.stab_steps=500
         self.counter=0
-        self.timestep=self.nmf.timestep
-        self.max_sim=self.num_steps*self.timestep
+        self.timestep=self.nmf.timestep    
 
         self.control_mode=control_mode
         if control_mode=="RL":
@@ -27,6 +27,7 @@ class MyNMF(gym.Env):
         elif control_mode=="CPG":
             print("training a CPG RL controller")
         elif control_mode=="Decentralized":
+            self.decentralized=Decentralized_Controller(self.nmf)
             print("training RL-Decentralized controller")
         else:
             print(f"!!! Control mode {control_mode} is not implemented")
@@ -34,6 +35,8 @@ class MyNMF(gym.Env):
         self.init_action_space()
         self.obs_mode=obs_mode
         self.init_obs_space()
+
+        #self.init_stab()
         #self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(self.num_dofs,))
         self.joint_pos= np.zeros(self.num_dofs)
         self.joint_vel= np.zeros(self.num_dofs)
@@ -71,6 +74,8 @@ class MyNMF(gym.Env):
             print("training a CPG RL controller")
         elif self.control_mode=="Decentralized":
             print("training RL-Decentralized controller")
+            self.action_space = spaces.Box(low=-self.bound, high=self.bound,
+                                       shape=(6,))
         else:
             print(f"!!! Control mode {self.control_mode} is not implemented")
     
@@ -309,6 +314,33 @@ class MyNMF(gym.Env):
     def reward_full(self):
         return 0
     
+    def reward_stab(self):
+        """ Reward function aiming at maximizing forward velocity."""
+        # reward for forward velocity
+        #vel_reward = self.fly_vel[0]/1000
+        #vel_reward = self.fly_vel[0]/1000
+        z_vel_penalty = (self.fly_vel[2]/1000)**2
+
+        init_pose=list(self.nmf.init_pose.values())
+        z_pos_penalty = ((self.fly_pos[2]-init_pose[2])/1000)**2
+
+        if self.upside_down():
+            flipped_reward=-1
+        else:
+            flipped_reward=0    
+
+        reward = self.coeff_flipped*flipped_reward \
+                 +self.coeff_vel_z*z_vel_penalty \
+                 +self.coeff_pos_z*z_pos_penalty
+
+        self.reward_total={"rew": reward}
+        self.reward_terms={"z_vel_penalty": self.coeff_vel_z*z_vel_penalty, "z_pos_penalty": self.coeff_pos_z*z_pos_penalty}
+        if self.verbose:
+            print(f"reward_ tot: {reward}")
+            print(f"z_vel:{self.coeff_vel_z*z_vel_penalty}, z_pos:{self.coeff_pos_z*z_pos_penalty}, flipped:{self.coeff_flipped*flipped_reward}")
+        return reward # keep rewards positive
+        
+    
     def reward(self):
         """ Reward function aiming at maximizing forward velocity."""
         # reward for forward velocity
@@ -345,24 +377,85 @@ class MyNMF(gym.Env):
 
     def act_prev_angle(self, raw_action):
         prev_angles=self.nmf._get_observation()["joints"][0,:]
-        #print(init_pose)
         action=raw_action+prev_angles
         return action
 
+    def stabilization(self, action):
+        #to stabilize the fly at the beginning of the simulation  
+        while self.counter<self.stab_steps:
+            action=np.zeros(self.num_dofs) 
+            action=self.act_prev_angle(action)  
+            raw_obs, info = self.nmf.step({'joints': action})
+            self.counter+=1
+        else: 
+            if self.verbose: print("finished stabilization")
+
+    def init_stab(self):
+        from pathlib import Path
+        import pkg_resources
+        import pickle
+        # Load recorded data
+        data_path = Path(pkg_resources.resource_filename('flygym', 'data'))
+        with open(data_path / 'behavior' / 'single_steps.pkl', 'rb') as f:
+            data = pickle.load(f)
+
+            # Interpolate 5x
+        step_duration = len(data['joint_LFCoxa'])
+        interp_step_duration = int(step_duration * data['meta']['timestep'] / self.timestep)
+        step_data_block_base = np.zeros((len(self.nmf.actuated_joints), interp_step_duration))
+        measure_t = np.arange(step_duration) * data['meta']['timestep']
+        interp_t = np.arange(interp_step_duration) * self.timestep
+        for i, joint in enumerate(self.nmf.actuated_joints):
+            step_data_block_base[i, :] = np.interp(interp_t, measure_t, data[joint])
+
+        step_data_block_manualcorrect = step_data_block_base.copy()
+
+        print(f"actuated joints: {self.nmf.actuated_joints}")
+        for side in ["L", "R"]:
+            #step_data_block_manualcorrect[self.nmf.actuated_joints.index(f"joint_{side}MCoxa")] += np.deg2rad(10) # Protract the midlegs
+            step_data_block_manualcorrect[self.nmf.actuated_joints.index(f"joint_{side}HFemur")] += np.deg2rad(-5) # Retract the hindlegs
+            step_data_block_manualcorrect[self.nmf.actuated_joints.index(f"joint_{side}HTarsus1")] -= np.deg2rad(15) # Tarsus more parallel to the ground (flexed) (also helps with the hindleg retraction)
+            step_data_block_manualcorrect[self.nmf.actuated_joints.index(f"joint_{side}FFemur")] += np.deg2rad(15) # Protract the forelegs (slightly to conterbalance Tarsus flexion)
+            step_data_block_manualcorrect[self.nmf.actuated_joints.index(f"joint_{side}FTarsus1")] -= np.deg2rad(15) # Tarsus more parallel to the ground (flexed) (add some retraction of the forelegs)
+
+        self.step_data_block_manualcorrect = step_data_block_manualcorrect  
+        n_joints = len(self.nmf.actuated_joints)
+        legs = ["RF", "RM", "RH", "LF", "LM", "LH"]
+
+        #leg_ids = np.arange(len(legs)).astype(int)
+        self.joint_ids = np.arange(n_joints).astype(int)
+        # Map the id of the joint to the leg it belongs to (usefull to go through the steps for each legs)
+        #match_leg_to_joints = np.array([i  for joint in self.nmf.actuated_joints for i, leg in enumerate(legs) if leg in joint])
+
+    def stabilization2(self, action):
+        #to stabilize the fly at the beginning of the simulation 
+        n_stabilisation_steps = 1000 
+        print("here")
+        while self.counter<n_stabilisation_steps:
+            action = {'joints': self.step_data_block_manualcorrect[self.joint_ids, 0]}
+            raw_obs, info = self.nmf.step({'joints': action})
+            self.counter+=1
+        else: 
+            if self.verbose: print("finished stabilization")
+
+
     def step(self, action):
         # Later adapt the action with MLP 
+        self.stabilization(action)
+
+        if self.control_mode=="RL":
+            #action=self.act_angle_diff(action)
+            action=self.act_prev_angle(action) 
+        # if self.counter<self.stab_steps: 
+
+        if self.control_mode=="Decentralized":
+            action=self.decentralized.stepping(action)
+        #     self.stabilization()    
+        raw_obs, info = self.nmf.step({'joints': action})
+
         self.counter+=1
         if self.verbose: print(f"counter: {self.counter}")
 
-        if self.control_mode=="RL":
-            action=self.act_angle_diff(action)
-            #action=self.act_prev_angle(action)  
-        if self.counter<self.stab_steps:     
-            #to stabilize the fly at the beginning of the simulation    
-            init_pose=list(self.nmf.init_pose.values())
-            action=init_pose     
-            
-        raw_obs, info = self.nmf.step({'joints': action})
         obs = self._parse_obs(raw_obs)
         self.joint_pos = raw_obs['joints'][0, :]
         self.joint_vel = raw_obs['joints'][1, :]
@@ -387,6 +480,8 @@ class MyNMF(gym.Env):
             reward=self.reward_COP()
         elif self.reward_function=="full":
             reward=self.reward_full()
+        elif self.reward_function=="stab":
+            reward=self.reward_stab()
         if self.upside_down() or self.counter>self.num_steps :
             terminated = True
             self.reset()

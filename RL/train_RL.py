@@ -46,15 +46,27 @@ print(SAVE_PATH)
 from utils_RL import CheckpointCallback
 from env import MyNMF
 
+config_decentralized = {'reward': args.reward,
+                        'verbose':0,
+                        'obs_mode': 'augmented',
+                        'control_mode': "Decentralized",
+                        'render_mode': 'headless',
+                        'timestep': 1e-4,
+                        'init_pose': 'default',
+                        'actuated_joints': all_leg_dofs,
+                        }   
 
-nmf_env_headless = MyNMF(reward=args.reward,
-                        verbose=0,
-                         obs_mode='augmented',
-                         control_mode="RL",
-                        render_mode='headless',
-                         timestep=1e-4,
-                         init_pose='default',
-                         actuated_joints=leg_dofs_2_per_leg)  # which DoFs would you use?
+config_RL = {'reward': args.reward,
+            'verbose':0,
+            'obs_mode': 'augmented',
+            'control_mode': "Decentralized",
+            'render_mode': 'headless',
+            'timestep': 1e-4,
+            'init_pose': 'default',
+            'actuated_joints': all_leg_dofs,
+            }   
+
+nmf_env_headless = MyNMF(**config_decentralized)  # which DoFs would you use?
 
 checkpoint_callback = CheckpointCallback(save_freq=10000, save_path=SAVE_PATH,name_prefix='rl_model', env=nmf_env_headless, rew_freq=1000, verbose=2)
 

@@ -1,5 +1,5 @@
 from flygym.util.config import all_leg_dofs
-from flygym.util.config import leg_dofs_3_per_leg, leg_dofs_2_per_leg
+from flygym.util.config import all_leg_dofs, leg_dofs_3_per_leg, leg_dofs_2_per_leg
 
 from stable_baselines3 import PPO
 from stable_baselines3.ppo import MlpPolicy
@@ -17,7 +17,7 @@ run_time = 10
 
 parent_dir = os.path.abspath(os.path.join(os.getcwd(), os.pardir))
 interm_dir = "RL_logs/models/"
-exp_name = "PPO_2305_2dof_posi_rew_default"
+exp_name = "PPO_2505_stab_default"
 log_dir = interm_dir + exp_name
 log_dir = os.path.join(parent_dir, log_dir)
 #stats_path = os.path.join(log_dir, "vec_normalize.pkl")
