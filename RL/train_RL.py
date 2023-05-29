@@ -59,12 +59,12 @@ config_decentralized = {'reward': args.reward,
 config_RL = {'reward': args.reward,
             'verbose':0,
             'obs_mode': 'augmented',
-            'control_mode': "Decentralized",
+            'control_mode': "RL",
             'render_mode': 'headless',
             'timestep': 1e-4,
-            'init_pose': 'default',
-            'actuated_joints': all_leg_dofs,
-            }   
+            'init_pose': 'default',            
+            'actuated_joints': leg_dofs_3_per_leg,
+            'terrain_config':{'fly_pos':(0, 0, 600)}}   
 
 nmf_env_headless = MyNMF(**config_decentralized)  # which DoFs would you use?
 
@@ -72,7 +72,7 @@ checkpoint_callback = CheckpointCallback(save_freq=10000, save_path=SAVE_PATH,na
 
 
 nmf_model = PPO(MlpPolicy, nmf_env_headless, verbose=1, tensorboard_log=TB_LOG)
-nmf_model.learn(total_timesteps=200_000, log_interval=1,callback=checkpoint_callback, tb_log_name=SAVE_NAME)
+nmf_model.learn(total_timesteps=1000_000, log_interval=1,callback=checkpoint_callback, tb_log_name=SAVE_NAME)
 
 env=nmf_model.get_env()
 env.close()

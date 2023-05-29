@@ -14,10 +14,10 @@ class MyNMF(gym.Env):
     def __init__(self, obs_mode="default", control_mode="RL", reward="default", verbose=0,**kwargs):
         self.nmf = NeuroMechFlyMuJoCo(**kwargs)
         self.num_dofs = len(self.nmf.actuated_joints)
-        self.bound = 0.5
+        self.bound = 0.1
 
         self.num_steps=10_000
-        self.stab_steps=500
+        self.stab_steps=0
         self.counter=0
         self.timestep=self.nmf.timestep    
 
@@ -54,12 +54,13 @@ class MyNMF(gym.Env):
         self.verbose=verbose
 
         self.ori_ref=[-1.5, 0, 0.88]
-        self.flipped_margin=1.5
+        self.flipped_margin=[1.5, 1.5, 0.5]
 
         self.coeff_vel=2
-        self.coeff_flipped=50
+        self.coeff_flipped=200
+        self.coeff_height=50
         self.coeff_vel_z=-0.005
-        self.coeff_pos_z=-0.005
+        self.coeff_pos_z=-30
         self.coeff_energy=-1e05
         self.coeff_yaw=-2
         self.coeff_roll=-2
@@ -115,10 +116,10 @@ class MyNMF(gym.Env):
                 raw_obs['joints'][0, :].flatten(),
                 raw_obs['joints'][1, :].flatten(),
                 raw_obs['joints'][2, :].flatten(),
-                raw_obs['fly'][0, :].flatten(),
-                raw_obs['fly'][1, :].flatten(),
-                raw_obs['fly'][2, :].flatten(),
-                raw_obs['fly'][2, :].flatten(),
+                raw_obs['fly'][0, :].flatten(), #fly pos
+                raw_obs['fly'][1, :].flatten(), #fly vel
+                raw_obs['fly'][2, :].flatten(), #fly ori
+                raw_obs['fly'][3, :].flatten(), #fly ang vel
                 raw_obs['contact_forces'].flatten(),
                 raw_obs['end_effectors'].flatten()]
         #print(np.array(features).shape)
@@ -132,14 +133,27 @@ class MyNMF(gym.Env):
         raw_obs, info = self.nmf.reset()
         return self._parse_obs(raw_obs), info
     
+
+    def height_ok(self):
+        """ Check if the robot is upside down."""
+        boundaries=[1.5, 2]
+        if self.fly_pos[2]/1000 > boundaries[0] and self.fly_pos[2]/1000 < boundaries[1]:
+            if self.verbose:
+                print("z height acceptable")
+            return True
+        else:
+            #if self.verbose:
+            print("z height not acceptable")
+            return False
+
     def upside_down(self):
         """ Check if the robot is upside down."""
-        
-        margin= self.flipped_margin
-        if np.any(self.fly_ori-self.ori_ref < -margin) or np.any(self.fly_ori-self.ori_ref > margin):
-            if self.verbose:
-                print("flipped")
-            return True
+        for i in range(len(self.fly_ori)):
+            margin= self.flipped_margin[i]    
+            if np.abs(self.fly_ori[i]-self.ori_ref[i]) > margin:
+                if self.verbose:
+                    print("flipped")
+                return True
         else:
             return False
     
@@ -191,8 +205,8 @@ class MyNMF(gym.Env):
         
 
         vel_reward = self.fly_vel[0]/1000
-        z_penalty = (self.fly_vel[2]/1000)**2
-        
+        #z_penalty = (self.fly_vel[2]/1000)**2
+        z_pos_penalty = (np.abs(self.fly_pos[2]/1000-1.9))**2
         if self.upside_down():
             flipped_reward=-1
         else:
@@ -213,7 +227,7 @@ class MyNMF(gym.Env):
 
         reward = self.coeff_vel*vel_reward \
                  + self.coeff_flipped*flipped_reward \
-                 + self.coeff_z*z_penalty \
+                 + self.coeff_pos_z*z_pos_penalty \
                  + self.coeff_yaw * yaw_reward \
                  + self.coeff_roll * roll_reward\
                  #+ self.coeff_drift * drift_reward \
@@ -224,7 +238,7 @@ class MyNMF(gym.Env):
        
         self.reward_total={"rew": reward}
         self.reward_terms={ "vel_rew": self.coeff_vel*vel_reward, \
-                            "z_penalty": self.coeff_z*z_penalty, \
+                            "z_penalty": self.coeff_pos_z*z_pos_penalty, \
                             "yaw": self.coeff_yaw * yaw_reward, \
                             "roll": self.coeff_roll * roll_reward}#, \
                             #"drift": self.coeff_drift * drift_reward}
@@ -320,24 +334,35 @@ class MyNMF(gym.Env):
         #vel_reward = self.fly_vel[0]/1000
         #vel_reward = self.fly_vel[0]/1000
         z_vel_penalty = (self.fly_vel[2]/1000)**2
-
-        init_pose=list(self.nmf.init_pose.values())
-        z_pos_penalty = ((self.fly_pos[2]-init_pose[2])/1000)**2
-
+        #print(f"z_pos {self.fly_pos[2]/1000}")
+        #print(f"pitch {self.fly_ori}")
+        z_pos_penalty = (np.abs(self.fly_pos[2]/1000-1.9))**2
+        #print(z_pos_penalty)
+                #minmize roll (not fall on the side)
+        pitch_reward = (self.fly_ori[2])**2 #default pitch is 0
         if self.upside_down():
             flipped_reward=-1
         else:
-            flipped_reward=0    
+            flipped_reward=0 
+
+        if not self.height_ok(): 
+            height_rew=-1
+        else:
+            height_rew=0 
 
         reward = self.coeff_flipped*flipped_reward \
-                 +self.coeff_vel_z*z_vel_penalty \
-                 +self.coeff_pos_z*z_pos_penalty
-
+                 +self.coeff_height*height_rew \
+                 +self.coeff_pos_z*z_pos_penalty \
+                 -1*pitch_reward \
+                + 10*self.counter*self.timestep
+                 #self.coeff_pos_z*z_pos_penalty
+                #-1*z_pos_penalty \
+                #-0.5*z_vel_penalty \
         self.reward_total={"rew": reward}
-        self.reward_terms={"z_vel_penalty": self.coeff_vel_z*z_vel_penalty, "z_pos_penalty": self.coeff_pos_z*z_pos_penalty}
+        self.reward_terms={"z_vel_penalty": self.coeff_vel_z*z_vel_penalty}
         if self.verbose:
             print(f"reward_ tot: {reward}")
-            print(f"z_vel:{self.coeff_vel_z*z_vel_penalty}, z_pos:{self.coeff_pos_z*z_pos_penalty}, flipped:{self.coeff_flipped*flipped_reward}")
+            print(f"z_vel:{-0.1 *z_vel_penalty}, pos_z:{self.coeff_pos_z*z_pos_penalty}, pitch: {pitch_reward}, counter: {10*self.counter*self.timestep}")
         return reward # keep rewards positive
         
     
@@ -346,7 +371,7 @@ class MyNMF(gym.Env):
         # reward for forward velocity
         vel_reward = self.fly_vel[0]/1000
         #vel_reward = self.fly_vel[0]/1000
-        z_vel_penalty = (self.fly_vel[2]/1000)**2
+        #z_vel_penalty = (self.fly_vel[2]/1000)**2
 
         init_pose=list(self.nmf.init_pose.values())
         z_pos_penalty = ((self.fly_pos[2]-init_pose[2])/1000)**2
@@ -446,12 +471,16 @@ class MyNMF(gym.Env):
         if self.control_mode=="RL":
             #action=self.act_angle_diff(action)
             action=self.act_prev_angle(action) 
+            raw_obs, info = self.nmf.step({'joints': action})
         # if self.counter<self.stab_steps: 
 
         if self.control_mode=="Decentralized":
+            #print(action)
             action=self.decentralized.stepping(action)
+            raw_obs=self.nmf._get_observation()
+            info=self.nmf._get_info()
         #     self.stabilization()    
-        raw_obs, info = self.nmf.step({'joints': action})
+        
 
         self.counter+=1
         if self.verbose: print(f"counter: {self.counter}")

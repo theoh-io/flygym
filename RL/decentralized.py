@@ -2,8 +2,8 @@ import numpy as np
 import pickle
 from pathlib import Path
 
-class decentralized():
-    def _init_(self,nmf,num_steps=14776) :
+class Decentralized_Controller():
+    def __init__(self,nmf,num_steps=14776) :
         self.stepping_advancement = np.zeros(6).astype(float)
         out_dir = Path('../decentralized_ctrl')
         with open(out_dir / "manual_corrected_data.pickle", 'rb') as handle:
@@ -111,7 +111,7 @@ class decentralized():
             joint_pos = self.step_data_block_manualcorrect[self.joint_ids, np.floor(self.stepping_advancement[self.match_leg_to_joints]).astype(int)] # ICI round 
         action = {'joints': joint_pos}
         obs= self.nmf_gapped._get_observation()
-        self.obs_list_cruse_gapped.append(obs)
+        #self.obs_list_cruse_gapped.append(obs)
         self.all_legs_contact_forces[i,:]=[np.sum(obs["contact_forces"][self.leg_force_sensors_ids[leg]]) for leg in self.legs]
         updated_legs=[]
 

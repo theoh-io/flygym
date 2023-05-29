@@ -48,7 +48,7 @@ _default_terrain_config = {
     'flat': {
         'size': (50_000, 50_000),
         'friction': (1, 0.005, 0.0001),
-        'fly_pos': (0, 0, 300),
+        'fly_pos': (0, 0, 600),
         'fly_orient': (0, 1, 1, 0.1)
     },
     'gapped': {
@@ -268,6 +268,9 @@ class NeuroMechFlyMuJoCo(gym.Env):
         self.init_pose = {k: v for k, v in init_pose.items()
                           if k in actuated_joints}
 
+        #manual override to ensure we have default pose for 2 dofs
+        self.init_pose={'joint_LFCoxa': -0.013786011209829531, 'joint_LFFemur': -1.179384164839487, 'joint_LFTibia': 0.7576697527152239, 'joint_LHCoxa_roll': 2.40182983936772, 'joint_LHFemur': -1.5600327984359073, 'joint_LHTibia': 1.1483670219522084, 'joint_LMCoxa_roll': 1.7781654369575668, 'joint_LMFemur': -1.6747644921106808, 'joint_LMTibia': 1.7638238818766956, 'joint_RFCoxa': -0.0013245590523738352, 'joint_RFFemur': -1.3108537227850876, 'joint_RFTibia': 0.8962323508935617, 'joint_RHCoxa_roll': -2.441598208611467, 'joint_RHFemur': -1.3155305945251143, 'joint_RHTibia': 1.1447480632864273, 'joint_RMCoxa_roll': -1.8260175599723456, 'joint_RMFemur': -1.83633975605308, 'joint_RMTibia': 1.727808616914636}
+        
         # Fix unactuated joints and define list of actuated joints
         # for joint in model.find_all('joint'):
         #     if joint.name not in actuated_joints:
