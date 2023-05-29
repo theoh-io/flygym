@@ -87,13 +87,13 @@ class Decentralized_Controller():
 
         
         """
-
         initiating_leg = np.argmax(leg_scores)
         within_margin_legs = leg_scores[initiating_leg]-leg_scores <= leg_scores[initiating_leg]*percent_margin
         rule5_step_size_action = np.zeros((len(self.legs), self.num_steps))
         counter_since_last_increase = np.zeros(len(self.legs))
         legs_prev_step_size_action = np.zeros(len(self.legs))
         # If multiple legs are within the margin choose randomly among those legs
+        
         if np.sum(within_margin_legs) > 1:
             initiating_leg = np.random.choice(np.where(within_margin_legs)[0])
             #print("rdm choice")
@@ -128,8 +128,7 @@ class Decentralized_Controller():
 
         for l, leg in enumerate(self.legs):
             if l not in updated_legs :     
-                self.stepping_advancement = self.update_stepping_advancement(self.stepping_advancement, l, self.interp_step_duration)
-                
+                self.stepping_advancement = self.update_stepping_advancement(self.stepping_advancement, l, self.interp_step_duration)        
         return action
                 
     

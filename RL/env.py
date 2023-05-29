@@ -56,15 +56,15 @@ class MyNMF(gym.Env):
         self.ori_ref=[-1.5, 0, 0.88]
         self.flipped_margin=[1.5, 1.5, 0.5]
 
-        self.coeff_vel=2
+        self.coeff_vel=1
         self.coeff_flipped=200
         self.coeff_height=50
         self.coeff_vel_z=-0.005
         self.coeff_pos_z=-30
         self.coeff_energy=-1e05
         self.coeff_yaw=-2
-        self.coeff_roll=-2
-        #self.coeff_drift=-0.01
+        self.coeff_roll=-4
+        self.coeff_drift=-0.005
         
     def init_action_space(self):
         if self.control_mode=="RL":
@@ -202,27 +202,20 @@ class MyNMF(gym.Env):
     
     def reward_straight(self):
         """ Reward function aiming at maximizing forward velocity while penalizing lateral drift."""
-        
-
         vel_reward = self.fly_vel[0]/1000
-        #z_penalty = (self.fly_vel[2]/1000)**2
-        z_pos_penalty = (np.abs(self.fly_pos[2]/1000-1.9))**2
+        ref_z=1.9
+        z_pos_penalty = (np.abs(self.fly_pos[2]/1000-ref_z))**2
         if self.upside_down():
             flipped_reward=-1
         else:
             flipped_reward=0    
         
-        
         #minmize roll (not fall on the side)
         roll_reward = np.abs(self.fly_ori[0]-self.ori_ref[0])
-
         # minimize yaw (go straight) 
         yaw_reward = np.abs(self.fly_ori[2]-self.ori_ref[2])
-
-         
-        
         # penalty body y - don't drift laterally
-        #drift_reward = abs(self.robot.GetBasePosition()[1]) #0.01
+        drift_reward = np.abs(self.fly_pos[1]) #0.01
 
 
         reward = self.coeff_vel*vel_reward \
@@ -230,19 +223,20 @@ class MyNMF(gym.Env):
                  + self.coeff_pos_z*z_pos_penalty \
                  + self.coeff_yaw * yaw_reward \
                  + self.coeff_roll * roll_reward\
-                 #+ self.coeff_drift * drift_reward \
+                 + self.coeff_drift * drift_reward \
 
         if self.verbose:
             print(f"total rew {reward}")
-            print(f"orientation {yaw_reward}, {roll_reward}")
+            print(f"vel {self.coeff_vel*vel_reward}, z_pos {self.coeff_pos_z*z_pos_penalty}")
+            print(f"yaw {self.coeff_yaw*yaw_reward}, roll {self.coeff_roll*roll_reward} drift {self.coeff_drift*drift_reward}")
        
         self.reward_total={"rew": reward}
         self.reward_terms={ "vel_rew": self.coeff_vel*vel_reward, \
                             "z_penalty": self.coeff_pos_z*z_pos_penalty, \
                             "yaw": self.coeff_yaw * yaw_reward, \
-                            "roll": self.coeff_roll * roll_reward}#, \
-                            #"drift": self.coeff_drift * drift_reward}
-        return reward # keep rewards positive
+                            "roll": self.coeff_roll * roll_reward, \
+                            "drift": self.coeff_drift * drift_reward}
+        return reward 
     
     def support_polygon(self, contact_points):
         # Assuming 'end_effectors' is a numpy array with shape (N, 2) representing 2D positions of end effectors
@@ -477,8 +471,9 @@ class MyNMF(gym.Env):
         if self.control_mode=="Decentralized":
             #print(action)
             action=self.decentralized.stepping(action)
-            raw_obs=self.nmf._get_observation()
-            info=self.nmf._get_info()
+            raw_obs, info = self.nmf.step(action)#
+            #raw_obs=self.nmf._get_observation()
+            #info=self.nmf._get_info()
         #     self.stabilization()    
         
 
